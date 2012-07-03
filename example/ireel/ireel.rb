@@ -29,7 +29,11 @@ OMF::Common::Loggable.init_log 'ireel'
       x:
         legend: <%= x %>
       y:
-        legend: <%= y %>
+        ticks:
+          format: s
+        legend:
+          text: <%= y %>
+          offset: 60
     margin:
       left: 100
 EOF
