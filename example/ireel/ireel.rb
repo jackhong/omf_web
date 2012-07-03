@@ -13,10 +13,6 @@ DB_DIR = "/tmp"
 
 OMF::Common::Loggable.init_log 'ireel'
 
-# Load datasource
-
-load "#{File.dirname(__FILE__)}/generator.rb"
-
 @line_chart_template = ERB.new <<-EOF
   widget:
     id: line_chart_<%= schema %>
