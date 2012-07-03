@@ -16,7 +16,7 @@ OMF::Common::Loggable.init_log 'ireel'
 @line_chart_template = ERB.new <<-EOF
   widget:
     id: line_chart_<%= schema %>
-    name: Line Chart
+    name: <%= schema %>
     type: data/line_chart2
     data_source:
       name: <%= schema %>
