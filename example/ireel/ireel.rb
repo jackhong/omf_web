@@ -5,92 +5,75 @@ require 'omf_web'
 require 'yaml'
 require 'erb'
 require 'sqlite3'
+require 'optparse'
+require 'ostruct'
 require 'pp'
+
+DB_DIR = "/tmp"
 
 OMF::Common::Loggable.init_log 'ireel'
 
-# TODO use
-#Dir.glob("#{File.dirname(__FILE__)}/data_sources/*.rb").each do |fn|
-  #load fn
-#end
+# Load datasource
 
-db = SQLite3::Database.new("/tmp/345.sq3")
+load "#{File.dirname(__FILE__)}/generator.rb"
 
-ep = OMF::OML::OmlSqlSource.new("/tmp/345.sq3")
+@line_chart_template = ERB.new <<-EOF
+  widget:
+    id: line_chart_<%= schema %>
+    name: Line Chart
+    type: data/line_chart2
+    data_source:
+      name: <%= schema %>
+      dynamic: 1
+    mapping:
+      x_axis: <%= x %>
+      y_axis: <%= y %>
+      group_by: <%= group %>
+    axis:
+      x:
+        legend: <%= x %>
+      y:
+        legend: <%= y %>
+    margin:
+      left: 100
+EOF
+
+# Give me an experiment id
+@options = OpenStruct.new
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: ireel.rb start [options]"
+  opts.separator ""
+  opts.separator "Options:"
+
+  opts.on("-e", "--exp EXPID", "Experiment sql file") do |experiment_id|
+    @options.experiment_id = experiment_id
+  end
+  opts.on("-p", "--port Port", "Port") do |port|
+    @options.port = port
+  end
+end.parse!
+
+raise "Missing experiment id" if @options.experiment_id.nil?
+raise "Missing port number" if @options.port.nil?
+
+ep = OMF::OML::OmlSqlSource.new("#{DB_DIR}/#{@options.experiment_id}.sq3")
 
 ep.on_new_stream() do |stream|
   case stream.stream_name
+  when 'iperf_transfer'
+    t = stream.capture_in_table(:oml_ts_server, :oml_sender, :size)
+    OMF::Web.register_datasource t
+    x, y, group, schema = 'oml_ts_server', 'size', 'oml_sender', 'iperf_transfer'
+    OMF::Web.register_widget YAML.load(@line_chart_template.result(binding))['widget']
   when 'iperf_losses'
     t = stream.capture_in_table(:oml_ts_server, :oml_sender, :lost_datagrams)
-    #t.schema.hash_to_row(bob)
-    #pp t.name
-    #pp t.schema.hash_to_row
-    #OMF::Web.register_datasource t
+    OMF::Web.register_datasource t
+    x, y, group, schema = 'oml_ts_server', 'lost_datagrams', 'oml_sender', 'iperf_losses'
+    OMF::Web.register_widget YAML.load(@line_chart_template.result(binding))['widget']
   end
-  #init_graph(name + ' (T)', t, 'table', :schema => t.schema.describe)
-  #create_table(select, stream, 'table')
 end
 
 ep.run()
 
-schema = [[:oml_ts_server, :float], [:oml_sender, :string], [:lost_datagrams, :float]]
-table = OMF::OML::OmlTable.new 'iperf_losses', schema, :max_size => 20
-
-OMF::Web.register_datasource table
-
-db.results_as_hash = false
-tables = db.execute( "select name from sqlite_master where type = 'table'" ).flatten.find_all {|v| !(v =~ /^_/)}
-tables.map do |table|
-  db.results_as_hash = false
-  nodes = db.execute( "select distinct name from #{table} join _senders on oml_sender_id = _senders.id")
-  nodes.map do |node|
-    db.results_as_hash = true
-    rows = db.execute( "select * from #{table} join _senders on oml_sender_id = _senders.id and name = '#{node}'")
-    graph_rows = rows.map do |row|
-      {}.tap do |hash|
-        row.keys.each do |key|
-          if !(key =~ /^oml/ || key =~ /id$/ || key.class == Fixnum) && (Float(row[key]) rescue nil)
-            hash[key] = row[key]
-          end
-        end
-        hash['oml_ts_server'] = row['oml_ts_server']
-      end
-    end
-    graph_rows = graph_rows.in_groups_of(rows.size / 1000).map {|v| v.sum / v.size } rescue graph_rows
-    #build_dygraph(filename, table, node, graph_rows) unless graph_rows.empty? || graph_rows.first.keys.size < 2
-    #pp graph_rows.first
-  end
-  #puts table
-end
-
-# ERB yaml template
-
-x = 1
-
-line_char_template = ERB.new <<-EOF
-widget:
-  id: line_chart
-  name: Line Chart
-  type: data/line_chart2
-  data_source:
-    name: ipref_losses
-    dynamic: 1
-  mapping:
-    x_axis: oml_ts_server
-    y_axis: lost_datagrams
-    group_by: oml_sender
-  margin:
-    left: 100
-EOF
-
-h = YAML.load(line_char_template.result(binding))
-
-if w = h['widget']
-  OMF::Web.register_widget w
-else
-  OMF::Common::LObject.error "Don't know what to do with it"
-end
-
-opts = { :page_title => 'IREEL Demo' }
-
-OMF::Web.start(opts)
+OMF::Web.start( { :port => @options.port, :page_title => 'IREEL Demo' } )
