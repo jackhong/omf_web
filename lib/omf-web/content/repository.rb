@@ -218,7 +218,9 @@ module OMF::Web
         if @top_dir.start_with?('.') && ContentRepository.reference_dir
           @top_dir = File.join(ContentRepository.reference_dir, @top_dir)
         end
-        @top_dir = File.expand_path(@top_dir)
+        unless @top_dir =~ /^.+@.+:(.+)\.git$/
+          @top_dir = File.expand_path(@top_dir)
+        end
         debug "Creating repo '#{name} with top dir: #{@top_dir}"
 
         _create_if_not_exists if opts[:create_if_not_exists]
